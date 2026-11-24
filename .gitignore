@@ -1,0 +1,11 @@
+# Kept local on purpose
+#   DEFENSE.md          defense notes, includes the demo-class password
+#   tools/seed-demo.mjs creates the demo class, includes the same password
+# (The SQL in supabase/ is public: it has no secrets, only RLS and RPCs.)
+DEFENSE.md
+tools/seed-demo.mjs
+
+# OS / editor noise
+Thumbs.db
+.DS_Store
+*.log
