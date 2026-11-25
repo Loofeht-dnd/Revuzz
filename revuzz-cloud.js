@@ -529,7 +529,14 @@
       hydrate(acct);
       state.pendingSn = '';
       go('menu');
-      if (isNew) {
+      var fresh = isNew;
+      try {
+        if (localStorage.getItem('rv_fresh') === S.sn) {
+          fresh = true;
+          localStorage.removeItem('rv_fresh');
+        }
+      } catch (e) {}
+      if (fresh) {
         setTimeout(function () { try { gdStart(); } catch (e) {} }, 900);
       }
     });
@@ -561,8 +568,35 @@
         throw new Error('Account created, but Supabase still asks for email confirmation. ' +
           'Turn off "Confirm email" in Authentication -> Providers -> Email, then log in.');
       }
-      return afterLogin(true);
+      /* Signing up used to drop the student straight into the game. They now
+         go back to the login screen and sign in properly, so the first thing
+         they practise is the normal flow - and a mistyped password is caught
+         here instead of after a match. */
+      return state.client.auth.signOut({ scope: 'local' }).then(function () {
+        finishSignup(sn);
+      });
     });
+  }
+
+  function finishSignup(sn) {
+    state.user = null;
+    state.pendingSn = '';
+    try { localStorage.setItem('rv_fresh', sn); } catch (e) {}
+    try {
+      if (typeof INIT !== 'undefined' && INIT.login) INIT.login();
+      else go('login');
+    } catch (e) {
+      try { go('login'); } catch (e2) {}
+    }
+    var field = document.getElementById('sn');
+    if (field) field.value = sn;
+    var box = document.getElementById('verifyBox');
+    if (box) {
+      box.style.display = 'block';
+      box.innerHTML = '<b>✅ Account created</b>' +
+        '<p class="hint">Log in with your student number and the password you just chose.</p>';
+    }
+    try { toast('Account created — log in to start playing'); } catch (e) {}
   }
 
   function esc(t) {
@@ -728,7 +762,7 @@
     window.RVCloud = {
       /* Bump when the bridge changes, so "did the browser really reload the
          file?" is answerable from the console. */
-      build: '2026-11-24c',
+      build: '2026-11-25a',
       loginPassword: loginPassword,
       forgot: function () {
         toast('Ask the admin to reset your password. Self-service reset is not enabled yet.');

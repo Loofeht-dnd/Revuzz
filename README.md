@@ -108,7 +108,10 @@ python -m http.server 8123
 Open <http://127.0.0.1:8123/Revuzz-online.html>.
 
 Create the first account with **any** student number and an 8+ character
-password. Then make yourself the admin:
+password. Sign-up finishes by returning to the login screen with the student
+number filled in — log in there to enter the game (the account is already in the
+database; the password is checked by Supabase Auth). Then make yourself the
+admin:
 
 ```sql
 update public.profiles
