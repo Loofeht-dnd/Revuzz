@@ -117,6 +117,11 @@ create trigger profiles_protect_columns
   before update on public.profiles
   for each row execute function public.protect_profile_columns();
 
+drop trigger if exists lessons_touch_updated on public.lessons;
+create trigger lessons_touch_updated
+  before update on public.lessons
+  for each row execute function public.touch_updated_at();
+
 -- ---------- Login / sign-up lookup (callable before login) ----------
 
 -- Returns only a masked email, never the full address.
@@ -737,6 +742,121 @@ begin
 end;
 $$;
 
+-- ---------- AI: one quota row per student per day ----------
+-- The caps are constants inside the function, so a caller cannot pass a bigger
+-- number. p_calls is clamped to 1..30, so there is no free read path.
+create or replace function public.revuzz_ai_reserve(
+  p_calls     integer default 1,
+  p_questions integer default 0
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  c_calls     constant integer := 30;
+  c_questions constant integer := 300;
+  v_uid   uuid := auth.uid();
+  v_day   date := public.revuzz_today();
+  v_calls integer := least(greatest(coalesce(p_calls, 1), 1), c_calls);
+  v_qs    integer := least(greatest(coalesce(p_questions, 0), 0), c_questions);
+  v_used  integer;
+  v_usedq integer;
+begin
+  if v_uid is null then
+    return jsonb_build_object('ok', false, 'reason', 'not_signed_in');
+  end if;
+
+  insert into public.ai_usage (user_id, usage_date)
+  values (v_uid, v_day)
+  on conflict (user_id, usage_date) do nothing;
+
+  update public.ai_usage
+     set calls = calls + v_calls,
+         questions = questions + v_qs
+   where user_id = v_uid
+     and usage_date = v_day
+     and calls + v_calls <= c_calls
+     and questions + v_qs <= c_questions
+  returning calls, questions into v_used, v_usedq;
+
+  if v_used is null then
+    select calls, questions into v_used, v_usedq
+      from public.ai_usage
+     where user_id = v_uid and usage_date = v_day;
+    return jsonb_build_object(
+      'ok', false,
+      'reason', 'daily_limit',
+      'used', coalesce(v_used, c_calls),
+      'used_questions', coalesce(v_usedq, c_questions),
+      'cap', c_calls,
+      'cap_questions', c_questions
+    );
+  end if;
+
+  return jsonb_build_object(
+    'ok', true,
+    'used', v_used,
+    'used_questions', v_usedq,
+    'left', c_calls - v_used,
+    'cap', c_calls,
+    'cap_questions', c_questions
+  );
+end;
+$$;
+
+-- Read-only views of the same counters for the Edge Function, so it does not
+-- need the service-role key just to show "27 of 30 left".
+create or replace function public.revuzz_ai_quota()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'used', coalesce((
+      select calls from public.ai_usage
+       where user_id = auth.uid() and usage_date = public.revuzz_today()), 0),
+    'questions', coalesce((
+      select questions from public.ai_usage
+       where user_id = auth.uid() and usage_date = public.revuzz_today()), 0)
+  );
+$$;
+
+-- Whole-class calls today, for the shared daily budget. Only a number.
+create or replace function public.revuzz_ai_class_used()
+returns integer
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(sum(calls), 0)::int
+    from public.ai_usage
+   where usage_date = public.revuzz_today();
+$$;
+
+-- Give back quota when the provider itself failed (timeout, 429, bad key).
+-- Server-only: the function calls this with the service client, best effort.
+create or replace function public.revuzz_ai_refund(
+  p_user      uuid,
+  p_calls     integer default 1,
+  p_questions integer default 0
+)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.ai_usage
+     set calls = greatest(calls - greatest(coalesce(p_calls, 0), 0), 0),
+         questions = greatest(questions - greatest(coalesce(p_questions, 0), 0), 0)
+   where user_id = p_user
+     and usage_date = public.revuzz_today();
+$$;
+
 -- ---------- Permissions ----------
 
 revoke all on function public.revuzz_save_account(jsonb) from public;
@@ -748,6 +868,10 @@ revoke all on function public.revuzz_admin_grant(jsonb) from public;
 revoke all on function public.revuzz_admin_reset_day(jsonb) from public;
 revoke all on function public.revuzz_check_identity(text, text) from public;
 revoke all on function public.revuzz_today() from public;
+revoke all on function public.revuzz_ai_reserve(integer, integer) from public;
+revoke all on function public.revuzz_ai_quota() from public;
+revoke all on function public.revuzz_ai_class_used() from public;
+revoke all on function public.revuzz_ai_refund(uuid, integer, integer) from public;
 
 grant execute on function public.revuzz_save_account(jsonb) to authenticated;
 grant execute on function public.revuzz_record_game(jsonb) to authenticated;
@@ -758,4 +882,8 @@ grant execute on function public.revuzz_admin_grant(jsonb) to authenticated;
 grant execute on function public.revuzz_admin_reset_day(jsonb) to authenticated;
 grant execute on function public.revuzz_today() to authenticated;
 grant execute on function public.revuzz_check_identity(text, text) to anon, authenticated;
+grant execute on function public.revuzz_ai_reserve(integer, integer) to authenticated;
+grant execute on function public.revuzz_ai_quota() to authenticated;
+grant execute on function public.revuzz_ai_class_used() to authenticated;
+grant execute on function public.revuzz_ai_refund(uuid, integer, integer) to service_role;
 grant execute on function public.is_admin() to anon, authenticated;

@@ -204,6 +204,47 @@ alter table public.game_players drop constraint if exists game_players_user_id_f
 alter table public.game_players add constraint game_players_user_id_fkey
   foreign key (user_id) references public.profiles(id) on delete cascade;
 
+-- ---------- Handouts (the AI's raw material) ----------
+-- A student's own notes, typed/pasted or extracted on the device from a PDF,
+-- DOCX or PPTX. The text belongs to that student alone: the owner-only
+-- policies live in 03_policies.sql and there is no teacher read path.
+create table if not exists public.lessons (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  title       text not null,
+  source_name text not null default '',
+  source_kind text not null default 'txt',
+  body        text not null,
+  chars       integer not null default 0,
+  summary     text,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  constraint lessons_title_check check (length(title) between 1 and 120),
+  constraint lessons_source_name_check check (length(source_name) <= 160),
+  constraint lessons_source_kind_check
+    check (source_kind in ('txt', 'md', 'pdf', 'docx', 'pptx', 'paste')),
+  constraint lessons_body_check check (length(body) between 20 and 120000),
+  constraint lessons_chars_check check (chars >= 0)
+);
+
+create index if not exists lessons_user_idx
+  on public.lessons (user_id, created_at desc);
+
+-- ---------- AI quota ----------
+-- One counter row per student per Manila day. The browser has no grant on this
+-- table: only revuzz_ai_reserve / revuzz_ai_refund / revuzz_ai_quota /
+-- revuzz_ai_class_used (02_functions.sql) ever read or write it, so the caps
+-- cannot be raised from the client.
+create table if not exists public.ai_usage (
+  user_id    uuid not null references public.profiles(id) on delete cascade,
+  usage_date date not null,
+  calls      integer not null default 0,
+  questions  integer not null default 0,
+  primary key (user_id, usage_date),
+  constraint ai_usage_calls_check check (calls >= 0),
+  constraint ai_usage_questions_check check (questions >= 0)
+);
+
 -- ########## 02_functions.sql ##########
 -- ============================================================
 -- Revuzz online database - helper functions, triggers, RPCs
@@ -323,6 +364,11 @@ drop trigger if exists profiles_protect_columns on public.profiles;
 create trigger profiles_protect_columns
   before update on public.profiles
   for each row execute function public.protect_profile_columns();
+
+drop trigger if exists lessons_touch_updated on public.lessons;
+create trigger lessons_touch_updated
+  before update on public.lessons
+  for each row execute function public.touch_updated_at();
 
 -- ---------- Login / sign-up lookup (callable before login) ----------
 
@@ -944,6 +990,121 @@ begin
 end;
 $$;
 
+-- ---------- AI: one quota row per student per day ----------
+-- The caps are constants inside the function, so a caller cannot pass a bigger
+-- number. p_calls is clamped to 1..30, so there is no free read path.
+create or replace function public.revuzz_ai_reserve(
+  p_calls     integer default 1,
+  p_questions integer default 0
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  c_calls     constant integer := 30;
+  c_questions constant integer := 300;
+  v_uid   uuid := auth.uid();
+  v_day   date := public.revuzz_today();
+  v_calls integer := least(greatest(coalesce(p_calls, 1), 1), c_calls);
+  v_qs    integer := least(greatest(coalesce(p_questions, 0), 0), c_questions);
+  v_used  integer;
+  v_usedq integer;
+begin
+  if v_uid is null then
+    return jsonb_build_object('ok', false, 'reason', 'not_signed_in');
+  end if;
+
+  insert into public.ai_usage (user_id, usage_date)
+  values (v_uid, v_day)
+  on conflict (user_id, usage_date) do nothing;
+
+  update public.ai_usage
+     set calls = calls + v_calls,
+         questions = questions + v_qs
+   where user_id = v_uid
+     and usage_date = v_day
+     and calls + v_calls <= c_calls
+     and questions + v_qs <= c_questions
+  returning calls, questions into v_used, v_usedq;
+
+  if v_used is null then
+    select calls, questions into v_used, v_usedq
+      from public.ai_usage
+     where user_id = v_uid and usage_date = v_day;
+    return jsonb_build_object(
+      'ok', false,
+      'reason', 'daily_limit',
+      'used', coalesce(v_used, c_calls),
+      'used_questions', coalesce(v_usedq, c_questions),
+      'cap', c_calls,
+      'cap_questions', c_questions
+    );
+  end if;
+
+  return jsonb_build_object(
+    'ok', true,
+    'used', v_used,
+    'used_questions', v_usedq,
+    'left', c_calls - v_used,
+    'cap', c_calls,
+    'cap_questions', c_questions
+  );
+end;
+$$;
+
+-- Read-only views of the same counters for the Edge Function, so it does not
+-- need the service-role key just to show "27 of 30 left".
+create or replace function public.revuzz_ai_quota()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'used', coalesce((
+      select calls from public.ai_usage
+       where user_id = auth.uid() and usage_date = public.revuzz_today()), 0),
+    'questions', coalesce((
+      select questions from public.ai_usage
+       where user_id = auth.uid() and usage_date = public.revuzz_today()), 0)
+  );
+$$;
+
+-- Whole-class calls today, for the shared daily budget. Only a number.
+create or replace function public.revuzz_ai_class_used()
+returns integer
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(sum(calls), 0)::int
+    from public.ai_usage
+   where usage_date = public.revuzz_today();
+$$;
+
+-- Give back quota when the provider itself failed (timeout, 429, bad key).
+-- Server-only: the function calls this with the service client, best effort.
+create or replace function public.revuzz_ai_refund(
+  p_user      uuid,
+  p_calls     integer default 1,
+  p_questions integer default 0
+)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.ai_usage
+     set calls = greatest(calls - greatest(coalesce(p_calls, 0), 0), 0),
+         questions = greatest(questions - greatest(coalesce(p_questions, 0), 0), 0)
+   where user_id = p_user
+     and usage_date = public.revuzz_today();
+$$;
+
 -- ---------- Permissions ----------
 
 revoke all on function public.revuzz_save_account(jsonb) from public;
@@ -955,6 +1116,10 @@ revoke all on function public.revuzz_admin_grant(jsonb) from public;
 revoke all on function public.revuzz_admin_reset_day(jsonb) from public;
 revoke all on function public.revuzz_check_identity(text, text) from public;
 revoke all on function public.revuzz_today() from public;
+revoke all on function public.revuzz_ai_reserve(integer, integer) from public;
+revoke all on function public.revuzz_ai_quota() from public;
+revoke all on function public.revuzz_ai_class_used() from public;
+revoke all on function public.revuzz_ai_refund(uuid, integer, integer) from public;
 
 grant execute on function public.revuzz_save_account(jsonb) to authenticated;
 grant execute on function public.revuzz_record_game(jsonb) to authenticated;
@@ -965,6 +1130,10 @@ grant execute on function public.revuzz_admin_grant(jsonb) to authenticated;
 grant execute on function public.revuzz_admin_reset_day(jsonb) to authenticated;
 grant execute on function public.revuzz_today() to authenticated;
 grant execute on function public.revuzz_check_identity(text, text) to anon, authenticated;
+grant execute on function public.revuzz_ai_reserve(integer, integer) to authenticated;
+grant execute on function public.revuzz_ai_quota() to authenticated;
+grant execute on function public.revuzz_ai_class_used() to authenticated;
+grant execute on function public.revuzz_ai_refund(uuid, integer, integer) to service_role;
 grant execute on function public.is_admin() to anon, authenticated;
 
 -- ########## 03_policies.sql ##########
@@ -1210,6 +1379,32 @@ grant select on public.game_sessions, public.game_players, public.coin_ledger to
 grant select on public.themes, public.badges, public.accessories to anon, authenticated;
 
 grant select on public.public_profiles, public.leaderboard to authenticated;
+
+-- ---------- Handouts (lessons) ----------
+-- Owner-only in both directions: a student reads and edits their own notes and
+-- nobody else's. There is deliberately no teacher or admin read path, so a
+-- classmate's handout can never be opened from another account.
+alter table public.lessons enable row level security;
+
+drop policy if exists lessons_select on public.lessons;
+create policy lessons_select on public.lessons
+  for select to authenticated
+  using (user_id = auth.uid());
+
+drop policy if exists lessons_write on public.lessons;
+create policy lessons_write on public.lessons
+  for all to authenticated
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+
+grant select, insert, update, delete on public.lessons to authenticated;
+
+-- ---------- AI counters ----------
+-- Server-only table: RLS on, zero policies and no browser grant, so even a
+-- signed-in student cannot read or edit their quota row directly. The numbers
+-- come back through revuzz_ai_quota() and friends.
+alter table public.ai_usage enable row level security;
+revoke all on public.ai_usage from anon, authenticated;
 
 grant usage, select on all sequences in schema public to authenticated;
 

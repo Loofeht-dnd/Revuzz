@@ -241,4 +241,30 @@ grant select on public.themes, public.badges, public.accessories to anon, authen
 
 grant select on public.public_profiles, public.leaderboard to authenticated;
 
+-- ---------- Handouts (lessons) ----------
+-- Owner-only in both directions: a student reads and edits their own notes and
+-- nobody else's. There is deliberately no teacher or admin read path, so a
+-- classmate's handout can never be opened from another account.
+alter table public.lessons enable row level security;
+
+drop policy if exists lessons_select on public.lessons;
+create policy lessons_select on public.lessons
+  for select to authenticated
+  using (user_id = auth.uid());
+
+drop policy if exists lessons_write on public.lessons;
+create policy lessons_write on public.lessons
+  for all to authenticated
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+
+grant select, insert, update, delete on public.lessons to authenticated;
+
+-- ---------- AI counters ----------
+-- Server-only table: RLS on, zero policies and no browser grant, so even a
+-- signed-in student cannot read or edit their quota row directly. The numbers
+-- come back through revuzz_ai_quota() and friends.
+alter table public.ai_usage enable row level security;
+revoke all on public.ai_usage from anon, authenticated;
+
 grant usage, select on all sequences in schema public to authenticated;

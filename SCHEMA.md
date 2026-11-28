@@ -98,6 +98,21 @@ recorded twice in one match. Bots have `user_id = null`.
 Coins themselves are the balance in `profiles`; the ledger explains how the
 balance moved.
 
+### `lessons` — a student's own handouts
+
+`title`, `source_name`, `source_kind` (`txt`/`md`/`pdf`/`docx`/`pptx`/`paste`),
+`body` (20–120,000 characters), `chars`, optional `summary`, timestamps. The
+text is extracted **on the device**; only the text is stored. RLS is owner-only
+in both directions — there is deliberately no teacher/admin read policy, so a
+handout can never be opened from another account.
+
+### `ai_usage` — the AI quota counter
+
+`(user_id, usage_date)` primary key, `calls`, `questions`. One row per student
+per Manila day. RLS is on with **zero policies and no browser grant**: the
+numbers are only reachable through `revuzz_ai_reserve`, `revuzz_ai_quota`,
+`revuzz_ai_class_used` (and `revuzz_ai_refund` from the service role).
+
 ### Catalogs
 
 `themes(id, name, price)`, `badges(id, name, icon, description, sort_order)`,
@@ -129,6 +144,10 @@ balance moved.
 | `revuzz_balances()` | signed-in | the caller's `coins` / `xp` / `level` / `total_correct` |
 | `revuzz_admin_grant(p jsonb)` | admin only | teacher correction: adds/subtracts coins and XP for one student number, recomputes the level, writes the ledger |
 | `revuzz_admin_reset_day(p jsonb)` | admin only | clears one student's `daily_activity` row so the demo spin is fresh again |
+| `revuzz_ai_reserve(calls, questions)` | signed-in | atomically reserves today's AI quota; caps (30 calls / 300 questions) are constants, `calls` is clamped to 1–30 |
+| `revuzz_ai_quota()` | signed-in | the caller's used calls/questions today (used by the Edge Function for “N of 30 left”) |
+| `revuzz_ai_class_used()` | signed-in | total calls today, for the class-wide cap |
+| `revuzz_ai_refund(user, calls, questions)` | service role only | gives quota back when the provider itself failed |
 
 ### Who may change money
 
@@ -153,6 +172,8 @@ moved into RPCs later.
 | `missed_questions`, `custom_questions` | owner or admin | owner or admin |
 | `game_sessions`, `game_players` | any signed-in player | no direct writes (RPC only) |
 | `coin_ledger` | owner or admin | no direct writes |
+| `lessons` | owner only (no admin path) | owner only |
+| `ai_usage` | nobody (RPC numbers only) | nobody (RPC only) |
 | catalogs | anyone | no writes |
 
 ## Why some fields are `jsonb`

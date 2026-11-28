@@ -202,3 +202,44 @@ alter table public.game_sessions add constraint game_sessions_host_id_fkey
 alter table public.game_players drop constraint if exists game_players_user_id_fkey;
 alter table public.game_players add constraint game_players_user_id_fkey
   foreign key (user_id) references public.profiles(id) on delete cascade;
+
+-- ---------- Handouts (the AI's raw material) ----------
+-- A student's own notes, typed/pasted or extracted on the device from a PDF,
+-- DOCX or PPTX. The text belongs to that student alone: the owner-only
+-- policies live in 03_policies.sql and there is no teacher read path.
+create table if not exists public.lessons (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  title       text not null,
+  source_name text not null default '',
+  source_kind text not null default 'txt',
+  body        text not null,
+  chars       integer not null default 0,
+  summary     text,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  constraint lessons_title_check check (length(title) between 1 and 120),
+  constraint lessons_source_name_check check (length(source_name) <= 160),
+  constraint lessons_source_kind_check
+    check (source_kind in ('txt', 'md', 'pdf', 'docx', 'pptx', 'paste')),
+  constraint lessons_body_check check (length(body) between 20 and 120000),
+  constraint lessons_chars_check check (chars >= 0)
+);
+
+create index if not exists lessons_user_idx
+  on public.lessons (user_id, created_at desc);
+
+-- ---------- AI quota ----------
+-- One counter row per student per Manila day. The browser has no grant on this
+-- table: only revuzz_ai_reserve / revuzz_ai_refund / revuzz_ai_quota /
+-- revuzz_ai_class_used (02_functions.sql) ever read or write it, so the caps
+-- cannot be raised from the client.
+create table if not exists public.ai_usage (
+  user_id    uuid not null references public.profiles(id) on delete cascade,
+  usage_date date not null,
+  calls      integer not null default 0,
+  questions  integer not null default 0,
+  primary key (user_id, usage_date),
+  constraint ai_usage_calls_check check (calls >= 0),
+  constraint ai_usage_questions_check check (questions >= 0)
+);

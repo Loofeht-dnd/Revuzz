@@ -24,6 +24,9 @@ with expect(kind, name) as (
     ('table', 'game_sessions'),
     ('table', 'game_players'),
     ('table', 'coin_ledger'),
+    -- AI handouts + quota
+    ('table', 'lessons'),
+    ('table', 'ai_usage'),
     -- row level security
     ('rls',   'profiles'),
     ('rls',   'player_badges'),
@@ -32,6 +35,8 @@ with expect(kind, name) as (
     ('rls',   'custom_questions'),
     ('rls',   'game_sessions'),
     ('rls',   'coin_ledger'),
+    ('rls',   'lessons'),
+    ('rls',   'ai_usage'),
     -- views
     ('view',  'leaderboard'),
     ('view',  'public_profiles'),
@@ -43,10 +48,15 @@ with expect(kind, name) as (
     ('function', 'public.revuzz_buy(jsonb)'),
     ('function', 'public.revuzz_claim_daily(text)'),
     ('function', 'public.revuzz_balances()'),
+    ('function', 'public.revuzz_ai_reserve(integer,integer)'),
+    ('function', 'public.revuzz_ai_quota()'),
+    ('function', 'public.revuzz_ai_class_used()'),
+    ('function', 'public.revuzz_ai_refund(uuid,integer,integer)'),
     -- triggers
     ('trigger', 'on_auth_user_created'),
     ('trigger', 'profiles_touch_updated'),
-    ('trigger', 'profiles_protect_columns')
+    ('trigger', 'profiles_protect_columns'),
+    ('trigger', 'lessons_touch_updated')
 )
 select
   kind,

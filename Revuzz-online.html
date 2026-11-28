@@ -790,25 +790,135 @@ function srcUI(){dfUI();$('#srcs').innerHTML=[['built','Built-in'],['mine','My q
 let cT='quiz',qt='mc',tfv=true,fs='missed',fi=0,LT='all',qGenTypes=['mc','tf','id','en'],qGenCount=8;
 function qGenToggle(t){if(qGenTypes.includes(t)){if(qGenTypes.length===1)return toast('Choose at least one question type');qGenTypes=qGenTypes.filter(x=>x!==t)}else qGenTypes.push(t);cUI()}
 let soloQuizQs=[],soloQuizAt=0,soloQuizScore=0,soloQuizLocked=false;
-function generateQuiz(){const count=Math.max(1,Math.min(40,Number($('#qGenCount')?.value)||8));const types=qGenTypes.slice();if(!types.length)return toast('Select at least one type');const bank={mc:[{q:'What is the main source of energy for photosynthesis?',a:['Sunlight','Soil minerals','Oxygen','Wind']},{q:'Which pigment captures light energy?',a:['Chlorophyll','Glucose','Carbon dioxide','Water']},{q:'Where does photosynthesis mainly occur?',a:['Leaves','Roots','Flowers','Seeds']}],tf:[{q:'Photosynthesis uses carbon dioxide and water to produce glucose and oxygen.',c:true},{q:'Chlorophyll is found mainly in the mitochondria.',c:false},{q:'Sunlight provides energy for photosynthesis.',c:true}],id:[{q:'What is the green pigment that absorbs light energy?',c:['chlorophyll']},{q:'What sugar is produced during photosynthesis?',c:['glucose']},{q:'What organelle contains chlorophyll and is the site of photosynthesis?',c:['chloroplast','chloroplasts']}],en:[{q:'Name the two raw materials used in photosynthesis.',c:['water','carbon dioxide']},{q:'Name the two products of photosynthesis.',c:['glucose','oxygen']},{q:'Name the two main stages of photosynthesis.',c:['light-dependent reactions','calvin cycle']} ]};soloQuizQs=[];for(let i=0;i<count;i++){let t=types[i%types.length],pool=bank[t],item=pool[Math.floor(Math.random()*pool.length)];soloQuizQs.push(t==='mc'?{t,q:item.q,a:item.a.slice()}:t==='tf'?{t,q:item.q,c:item.c}:{t,q:item.q,c:item.c.slice()})}soloQuizAt=0;soloQuizScore=0;soloQuizLocked=false;renderSoloQuestion();}
+function startBankQuiz(){const count=Math.max(1,Math.min(40,Number($('#qGenCount')?.value)||8));const types=qGenTypes.slice();if(!types.length)return toast('Select at least one type');const bank={mc:[{q:'What is the main source of energy for photosynthesis?',a:['Sunlight','Soil minerals','Oxygen','Wind']},{q:'Which pigment captures light energy?',a:['Chlorophyll','Glucose','Carbon dioxide','Water']},{q:'Where does photosynthesis mainly occur?',a:['Leaves','Roots','Flowers','Seeds']}],tf:[{q:'Photosynthesis uses carbon dioxide and water to produce glucose and oxygen.',c:true},{q:'Chlorophyll is found mainly in the mitochondria.',c:false},{q:'Sunlight provides energy for photosynthesis.',c:true}],id:[{q:'What is the green pigment that absorbs light energy?',c:['chlorophyll']},{q:'What sugar is produced during photosynthesis?',c:['glucose']},{q:'What organelle contains chlorophyll and is the site of photosynthesis?',c:['chloroplast','chloroplasts']}],en:[{q:'Name the two raw materials used in photosynthesis.',c:['water','carbon dioxide']},{q:'Name the two products of photosynthesis.',c:['glucose','oxygen']},{q:'Name the two main stages of photosynthesis.',c:['light-dependent reactions','calvin cycle']} ]};soloQuizQs=[];for(let i=0;i<count;i++){let t=types[i%types.length],pool=bank[t],item=pool[Math.floor(Math.random()*pool.length)];soloQuizQs.push(t==='mc'?{t,q:item.q,a:item.a.slice()}:t==='tf'?{t,q:item.q,c:item.c}:{t,q:item.q,c:item.c.slice()})}soloQuizAt=0;soloQuizScore=0;soloQuizLocked=false;renderSoloQuestion();}
 function renderSoloQuestion(){const q=soloQuizQs[soloQuizAt];$('#ctabs').style.display='none';$('#cbody').innerHTML=`<div class="box"><div class="row" style="justify-content:space-between"><span class="chip sel">${LB[q.t]}</span><span class="hint">Question ${soloQuizAt+1} / ${soloQuizQs.length}</span></div><div class="hpb" style="margin:12px 0"><i style="width:${soloQuizAt/soloQuizQs.length*100}%"></i></div><h2 style="margin:16px 0">${q.q}</h2><div id="soloQuizAnswer">${q.t==='mc'?sh(q.a.map((v,k)=>({v,ok:k===0}))).map(o=>`<button class="ans" onclick="soloQuizSubmit('${encodeURIComponent(o.v)}')">${o.v}</button>`).join(''):q.t==='tf'?`<div class="types"><button class="chip" onclick="soloQuizSubmit('true')">True</button><button class="chip" onclick="soloQuizSubmit('false')">False</button></div>`:`<input class="in nm2" id="soloQuizInput" placeholder="${q.t==='en'?'Answers separated by commas':'Type your answer'}"><button class="btn yellow" onclick="soloQuizSubmit(document.getElementById('soloQuizInput').value)">Submit answer</button>`}</div><div id="soloQuizFeedback"></div><button class="btn" style="margin-top:14px" onclick="soloQuizExit()">Exit quiz</button></div>`}
 function soloQuizSubmit(value){if(soloQuizLocked)return;const q=soloQuizQs[soloQuizAt],v=decodeURIComponent(value).trim().toLowerCase();if(!v)return;let ok=q.t==='mc'?v===q.a[0].toLowerCase():q.t==='tf'?v===(q.c?'true':'false'):q.t==='en'?q.c.every(a=>v.split(',').map(x=>x.trim()).includes(a.toLowerCase()))&&new Set(v.split(',').map(x=>x.trim())).size===v.split(',').length:q.c.some(a=>a.toLowerCase()===v);soloQuizLocked=true;if(ok)soloQuizScore++;$('#soloQuizAnswer').innerHTML='';$('#soloQuizFeedback').innerHTML=`<div class="solo-demo"><b>${ok?'✅ Correct!':'❌ Not quite.'}</b><p>Answer: ${q.t==='mc'?q.a[0]:q.t==='tf'?(q.c?'True':'False'):q.c.join(', ')}</p></div><button class="btn yellow" onclick="soloQuizNext()">${soloQuizAt===soloQuizQs.length-1?'See results':'Next question'}</button>`}
 function soloQuizNext(){soloQuizAt++;soloQuizLocked=false;if(soloQuizAt>=soloQuizQs.length){$('#cbody').innerHTML=`<div class="box" style="text-align:center"><h1>Quiz complete!</h1><h2>${soloQuizScore} / ${soloQuizQs.length}</h2><p>${Math.round(soloQuizScore/soloQuizQs.length*100)}% score</p><button class="btn yellow" onclick="soloQuizExit()">Back to quiz settings</button><button class="btn cyan" onclick="generateQuiz()">Try again</button></div>`;return}renderSoloQuestion()}
 function soloQuizExit(){soloQuizQs=[];$('#ctabs').style.display='block';cUI()}
 
 const ans=q=>q.t==='mc'?q.a[0]:q.t==='tf'?(q.c?'True':'False'):q.t==='en'?q.c.join(', '):q.c[0],deck=()=>fs==='missed'?(S.x.mq||[]):fs==='mine'?S.x.quiz:Q,tx=a=>50*a.lvl*(a.lvl-1)+a.xp;
-let soloView='home',soloNotes='Photosynthesis is the process by which plants use sunlight, water, and carbon dioxide to produce glucose and oxygen. Chlorophyll in chloroplasts captures light energy. The process mainly occurs in leaves. The two stages are light-dependent reactions and the Calvin cycle.';
-function soloHome(){soloView='home';$('#soloTitle').textContent='Solo';$('#soloSub').textContent='Study on your own with your notes';$('#soloHome').style.display='block';$('#ctabs').style.display='none';$('#cbody').style.display='none';$('#soloHome').innerHTML=`<div class="solo-current"><h3>📘 CURRENT LESSON</h3><p><b>Photosynthesis — Example lesson</b><br>Sample notes are loaded. Upload your own handout or notes to replace them.</p></div><div class="solo-grid"><button class="solo-card upload" onclick="soloUpload()"><span class="si">📤</span><b>Upload notes</b><small>PDF, DOCX, PPTX or text (demo upload)</small></button><button class="solo-card summary" onclick="soloSummary()"><span class="si">📄</span><b>Auto summary</b><small>Short version and key terms</small></button><button class="solo-card quiz" onclick="soloQuiz()"><span class="si">✍️</span><b>Quiz creation</b><small>Make or generate questions</small></button><button class="solo-card flash" onclick="soloFlash()"><span class="si">📚</span><b>Flashcards</b><small>Flip and review</small></button><button class="solo-card ai" onclick="soloAI()"><span class="si">✨</span><b>AI-assisted review</b><small>Ask about your notes</small></button></div>`}
+let soloView='home';
+/* ---------- Solo: real handouts + AI (revuzz-cloud.js exposes RVAI) ---------- */
+let soloLessons=[];
+function soloEsc(t){return String(t==null?'':t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function soloHasAI(){return !!(window.RVAI&&RVAI.canUse())}
+function soloAiLabel(){return window.RVAI?RVAI.statusLabel():'AI needs the cloud bridge (config.js) to load'}
+function soloLessonTitle(){return RVAI&&RVAI.lesson?RVAI.lesson.title:'Photosynthesis — Example lesson'}
+function soloLessonSub(){const l=RVAI&&RVAI.lesson;return l?String(l.kind||'txt').toUpperCase()+' · '+Number(l.chars||0).toLocaleString()+' characters':'Sample notes are loaded. Upload a handout to study your own lesson.'}
+
+function soloHome(){
+  soloView='home';
+  $('#soloTitle').textContent='Solo';
+  $('#soloSub').textContent='Study on your own with your notes';
+  $('#soloHome').style.display='block';
+  $('#ctabs').style.display='none';
+  $('#cbody').style.display='none';
+  $('#soloHome').innerHTML=`<div class="solo-current"><h3>📘 CURRENT LESSON</h3><p><b>${soloEsc(soloLessonTitle())}</b><br>${soloEsc(soloLessonSub())}</p><small style="display:block;margin-top:10px;color:#9b93d8">${soloEsc(soloAiLabel())}</small></div><div class="solo-grid"><button class="solo-card upload" onclick="soloUpload()"><span class="si">📤</span><b>Upload notes</b><small>PDF, DOCX, PPTX, TXT or MD</small></button><button class="solo-card summary" onclick="soloSummary()"><span class="si">📄</span><b>Auto summary</b><small>Short version and key terms</small></button><button class="solo-card quiz" onclick="soloQuiz()"><span class="si">✍️</span><b>Quiz creation</b><small>Make or generate questions</small></button><button class="solo-card flash" onclick="soloFlash()"><span class="si">📚</span><b>Flashcards</b><small>Flip and review</small></button><button class="solo-card ai" onclick="soloAI()"><span class="si">✨</span><b>AI-assisted review</b><small>Ask about your notes</small></button></div>`;
+  if(window.RVAI&&!RVAI.statusInfo.checked)RVAI.checkStatus().then(()=>{if(soloView==='home')soloHome()});
+}
+
+function soloUpload(){
+  soloPanel('Upload notes','Add a lesson to study',`<div class="box"><h2>📤 Upload notes</h2><p class="hint">PDF, DOCX, PPTX, TXT or MD, up to 8 MB. The file is read on this device — only its text is saved to your account.</p><input class="solo-upload" type="file" accept=".txt,.md,.pdf,.docx,.pptx" onchange="soloReadFile(this)"><div class="hint" id="soloUpStatus" style="margin-top:10px;min-height:18px"></div><div class="solo-demo" style="margin-top:14px"><h3>Or paste your notes</h3><input class="in nm2" id="soloPasteTitle" maxlength="120" placeholder="Lesson title"><textarea class="in nm2" id="soloPasteBody" placeholder="Paste at least a paragraph…" style="margin-top:8px;min-height:110px"></textarea><button class="btn yellow" style="margin-top:10px" onclick="soloSavePaste()">Save these notes</button></div><div id="soloLessonList"></div><button class="btn" style="margin-top:14px" onclick="soloHome()">Done</button></div>`);
+  soloLessonList();
+}
+
+function soloReadFile(inp){
+  const f=inp.files&&inp.files[0];if(!f)return;
+  const out=$('#soloUpStatus'),say=m=>{if(out)out.textContent=m};
+  if(!window.RVAI)return say('The cloud bridge did not load. Check config.js and reload.');
+  say('Reading '+f.name+'…');
+  RVAI.extractFile(f).then(d=>{say('Saving “'+d.title+'”…');return RVAI.saveLesson(d)}).then(l=>{say('');toast('Notes saved ✓ ('+Number(l.chars).toLocaleString()+' characters)');soloUpload()}).catch(e=>say(RVAI.friendly(e)));
+}
+
+function soloSavePaste(){
+  const title=($('#soloPasteTitle')?.value||'').trim()||'Pasted notes';
+  const body=($('#soloPasteBody')?.value||'').trim();
+  const out=$('#soloUpStatus'),say=m=>{if(out)out.textContent=m};
+  if(!window.RVAI)return say('The cloud bridge did not load. Check config.js and reload.');
+  if(body.length<20)return say('Paste at least a paragraph (20+ characters).');
+  say('Saving…');
+  RVAI.saveLesson({title,sourceName:'Pasted notes',kind:'paste',text:body}).then(()=>{say('');toast('Notes saved ✓');soloUpload()}).catch(e=>say(RVAI.friendly(e)));
+}
+
+function soloLessonList(){
+  const box=$('#soloLessonList');if(!box||!window.RVAI)return;
+  if(!RVAI.canUse()){box.innerHTML='<p class="hint" style="margin-top:14px">Log in to see the handouts saved to your account.</p>';return}
+  RVAI.listLessons().then(rows=>{
+    soloLessons=rows;
+    if(!rows.length){box.innerHTML='';return}
+    box.innerHTML='<h3 style="margin:18px 0 8px">Your saved handouts</h3>'+rows.map(r=>{
+      const cur=RVAI.lesson&&RVAI.lesson.id===r.id;
+      return `<div class="row" style="justify-content:space-between;gap:8px;padding:9px 0;border-bottom:1px solid #ffffff14"><div style="min-width:0"><b style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${soloEsc(r.title)}</b><small class="hint">${soloEsc(String(r.source_kind||'txt').toUpperCase())} · ${Number(r.chars||0).toLocaleString()} characters</small></div><div style="display:flex;gap:6px;flex:none"><button class="chip${cur?' sel':''}" onclick="soloUseLesson('${r.id}')">${cur?'In use':'Use'}</button><button class="chip" onclick="soloDropLesson('${r.id}')">Delete</button></div></div>`;
+    }).join('');
+  }).catch(e=>{box.innerHTML='<p class="hint" style="margin-top:14px">'+soloEsc(RVAI.friendly(e))+'</p>'});
+}
+
+function soloUseLesson(id){
+  const r=(soloLessons||[]).find(x=>x.id===id);
+  if(!r||!window.RVAI)return;
+  RVAI.useLesson(r);
+  toast('Using “'+r.title+'”');
+  soloHome();
+}
+
+function soloDropLesson(id){
+  if(!confirm('Delete this handout from your account?'))return;
+  RVAI.deleteLesson(id).then(()=>{toast('Handout deleted');soloUpload()}).catch(e=>toast(RVAI.friendly(e)));
+}
+
+function soloSummary(){
+  soloPanel('Auto summary','Quick summary and key terms',`<div class="box"><h2>📄 Auto summary</h2><div class="hint" id="soloSumHead">Reading your notes…</div><div id="soloSumOut"></div><button class="btn cyan" style="margin-top:14px" onclick="soloQuiz()">Create a quiz from this lesson</button></div>`);
+  if(!window.RVAI){$('#soloSumHead').textContent='AI is not available in this build.';return}
+  RVAI.summary().then(r=>{
+    const head=$('#soloSumHead'),out=$('#soloSumOut');if(!head||!out)return;
+    head.textContent=r.mode==='live'?'✨ AI summary':(r.mode==='demo'?'Demo AI — not a live model':'No AI key — summary built from your notes');
+    const terms=(r.key_terms||[]).map(t=>`<li><b>${soloEsc(t.term)}:</b> ${soloEsc(t.definition)}</li>`).join('');
+    out.innerHTML=`<div class="solo-demo" style="margin-top:12px"><p>${soloEsc(r.summary)}</p>${terms?'<h3>Key terms</h3><ul>'+terms+'</ul>':''}</div>`+(r.note?`<p class="hint">${soloEsc(r.note)}</p>`:'');
+  }).catch(e=>{const head=$('#soloSumHead');if(head)head.textContent=RVAI.friendly(e)});
+}
+
+function soloAI(){
+  soloPanel('AI-assisted review','Ask questions about your notes',`<div class="box"><h2>✨ Ask about your lesson</h2><p class="hint" id="soloAiHead">${soloEsc(soloAiLabel())}</p><input class="in nm2" id="soloAsk" maxlength="300" placeholder="Ask a question about your notes..."><button class="btn purple" style="margin-top:10px" onclick="soloAnswer()">Ask</button><div id="soloAnswerBox" style="margin-top:12px"></div></div>`);
+}
+
+function soloAnswer(){
+  const q=$('#soloAsk')?.value.trim();
+  if(!q)return toast('Type a question first');
+  if(!window.RVAI)return;
+  const box=$('#soloAnswerBox');
+  box.innerHTML='<div class="hint">Thinking…</div>';
+  RVAI.ask(q).then(r=>{
+    const src=(r.sources&&r.sources.length)?'<h3>From your notes</h3><ul>'+r.sources.map(s=>`<li><i>“${soloEsc(s)}”</i></li>`).join('')+'</ul>':'';
+    box.innerHTML=`<div class="solo-demo"><p>${soloEsc(r.answer)}</p>${src}<small>${r.mode==='live'?'AI answer from your handout':(r.mode==='demo'?'Demo AI — keyword result, not a live model':'No AI key — keyword search in your notes')}</small></div>`;
+  }).catch(e=>{box.innerHTML='<div class="hint">'+soloEsc(RVAI.friendly(e))+'</div>'});
+}
+
+/* Generate questions from the current lesson when AI is ready; the built-in
+   practice bank is the fallback so the button always does something. */
+function generateQuiz(){
+  const count=Math.max(1,Math.min(40,Number($('#qGenCount')?.value)||8));
+  const types=qGenTypes.slice();
+  if(!types.length)return toast('Select at least one type');
+  if(!soloHasAI()||!window.RVAI.lesson)return startBankQuiz(count,types);
+  if(RVAI.statusInfo.checked&&!RVAI.statusInfo.configured){
+    toast('AI is not set up — using built-in practice questions');
+    return startBankQuiz(count,types);
+  }
+  $('#cbody').innerHTML=`<div class="box"><h2>✨ Writing your questions…</h2><p class="hint">Reading “${soloEsc(RVAI.lesson.title)}”. This takes a few seconds.</p></div>`;
+  RVAI.questions({count,types}).then(r=>{
+    const qs=(r.rows||[]).slice(0,count);
+    if(!qs.length)throw new Error('The AI returned no usable questions. Try a longer handout.');
+    RVAI.addToDeck(qs);
+    soloQuizQs=qs;soloQuizAt=0;soloQuizScore=0;soloQuizLocked=false;
+    renderSoloQuestion();
+    toast(r.mode==='demo'?'Demo AI: sample questions':'✨ '+qs.length+' questions ready');
+  }).catch(e=>{toast(RVAI.friendly(e));startBankQuiz(count,types)});
+}
 function soloPanel(title,sub,html){soloView='sub';$('#soloTitle').textContent=title;$('#soloSub').textContent=sub;$('#soloHome').style.display='block';$('#ctabs').style.display='none';$('#cbody').style.display='block';$('#soloHome').innerHTML=`<button class="chip solo-back" onclick="soloHome()">‹ Back to Solo</button><div class="solo-content">${html}</div>`}
-function soloUpload(){soloPanel('Upload notes','Add a lesson to study',`<div class="box"><h2>📤 Upload notes</h2><p class="hint">Try a text file in this preview. File processing for PDF/DOCX/PPTX needs the app backend.</p><input class="solo-upload" type="file" accept=".txt,.pdf,.docx,.pptx" onchange="soloReadFile(this)"><div class="solo-demo"><h3>Example notes already loaded</h3><p>${soloNotes}</p></div><button class="btn yellow" onclick="soloHome()">Done</button></div>`)}
-function soloReadFile(inp){const f=inp.files?.[0];if(!f)return;if(!f.name.toLowerCase().endsWith('.txt')){toast('Preview can read TXT files. PDF/DOCX/PPTX upload needs backend processing.');return}const r=new FileReader();r.onload=()=>{soloNotes=String(r.result||'');toast('Notes loaded ✓');soloUpload()};r.readAsText(f)}
-function soloSummary(){soloPanel('Auto summary','Quick summary and key terms',`<div class="solo-demo"><h3>🌿 Summary: Photosynthesis</h3><p>${soloNotes}</p><h3>Key terms</h3><ul><li><b>Chlorophyll:</b> pigment that captures sunlight.</li><li><b>Glucose:</b> sugar produced by plants.</li><li><b>Chloroplast:</b> organelle where photosynthesis takes place.</li><li><b>Calvin cycle:</b> stage that uses carbon dioxide to build sugars.</li></ul></div><button class="btn cyan" onclick="soloQuiz()">Create a quiz from this lesson</button>`)}
 function soloQuiz(){soloView='quiz';$('#soloTitle').textContent='Quiz creation';$('#soloSub').textContent='Make or generate questions from your notes';$('#soloHome').style.display='none';$('#ctabs').style.display='block';$('#cbody').style.display='block';cT='quiz';cUI()}
 function soloFlash(){soloView='flash';$('#soloTitle').textContent='Flashcards';$('#soloSub').textContent='Flip and review';$('#soloHome').style.display='none';$('#ctabs').style.display='block';$('#cbody').style.display='block';cT='flash';fs='built';fi=0;cUI()}
-function soloAI(){soloPanel('AI-assisted review','Ask questions about your notes (sample demo)',`<div class="box"><h2>✨ Ask about your lesson</h2><p class="hint">Example: What is photosynthesis?</p><input class="in nm2" id="soloAsk" placeholder="Ask a question about your notes..."><button class="btn purple" onclick="soloAnswer()">Ask</button><div id="soloAnswerBox"></div><div class="solo-demo"><b>Sample question:</b> Why is sunlight important?<p>Sunlight provides the energy plants use to convert water and carbon dioxide into glucose and oxygen.</p></div></div>`)}
-function soloAnswer(){const q=$('#soloAsk')?.value.trim();if(!q)return toast('Type a question first');$('#soloAnswerBox').innerHTML=`<div class="solo-demo"><h3>Demo answer</h3><p>Based on the example lesson: ${q.toLowerCase().includes('chlorophyll')?'Chlorophyll captures light energy in chloroplasts.':q.toLowerCase().includes('stage')?'Photosynthesis has light-dependent reactions and the Calvin cycle.':'Plants use sunlight, water, and carbon dioxide to produce glucose and oxygen. This is based on the sample notes currently loaded.'}</p><small>Demo response — this is not connected to a live AI model.</small></div>`}
 function cUI(){$('#ctabs').innerHTML=[['quiz','✏️ Quiz maker'],['flash','🃏 Flashcards']].map(([k,l])=>`<button class="chip${cT===k?' sel':''}" onclick="cT='${k}';cUI()">${l}</button>`).join('');
-if(cT==='quiz'){$('#cbody').innerHTML=`<div class="box" style="margin-bottom:14px"><h2>✨ AI Quiz Generator</h2><p class="hint">Choose any combination of question formats. When you tap Generate, your quiz starts immediately.</p><div class="types" style="grid-template-columns:repeat(2,1fr)">${['mc','tf','id','en'].map(t=>`<button class="chip${qGenTypes.includes(t)?' sel':''}" onclick="qGenToggle('${t}')">${LB[t]}</button>`).join('')}</div><label class="hint" style="display:block;margin:12px 0 6px">Number of questions</label><input class="in nm2" id="qGenCount" type="number" min=1 max=40 value="${qGenCount}" onchange="qGenCount=Math.max(1,Math.min(40,+this.value||8))"><button class="btn yellow" style="margin-top:10px" onclick="generateQuiz()">Generate & Start Quiz</button></div>`}
+if(cT==='quiz'){$('#cbody').innerHTML=`<div class="box" style="margin-bottom:14px"><h2>✨ AI Quiz Generator</h2><p class="hint">Choose any combination of question formats. Generate writes them from your current lesson when AI is ready — otherwise you get built-in practice questions.</p><div class="types" style="grid-template-columns:repeat(2,1fr)">${['mc','tf','id','en'].map(t=>`<button class="chip${qGenTypes.includes(t)?' sel':''}" onclick="qGenToggle('${t}')">${LB[t]}</button>`).join('')}</div><label class="hint" style="display:block;margin:12px 0 6px">Number of questions</label><input class="in nm2" id="qGenCount" type="number" min=1 max=40 value="${qGenCount}" onchange="qGenCount=Math.max(1,Math.min(40,+this.value||8))"><button class="btn yellow" style="margin-top:10px" onclick="generateQuiz()">Generate & Start Quiz</button></div>`}
 else{const d=deck(),n=d.length,ch=(k,l)=>`<button class="chip${fs===k?' sel':''}" onclick="fs='${k}';fi=0;cUI()">${l}</button>`;if(fi>=n)fi=0;
 $('#cbody').innerHTML=`<div class="types" style="margin-bottom:6px">${ch('missed','Missed ('+(S.x.mq||[]).length+')')}${ch('mine','My quiz ('+S.x.quiz.length+')')}${ch('built','Built-in')}</div>`+(n?`<div class="fc" onclick="this.classList.toggle('flip')"><div class="fi"><div class="ff">${d[fi].q}</div><div class="fb">${ans(d[fi])}</div></div></div><p class="hint" style="text-align:center">Tap the card to flip</p><div class="row"><button class="btn cyan" onclick="fnav(-1)">‹ Prev</button><span style="align-self:center;flex:1;text-align:center">${fi+1} / ${n}</span><button class="btn yellow" onclick="fnav(1)">Next ›</button></div>`:'<p class="tag">Nothing here yet.</p>')}}
 function addQ(){const v=id=>($('#'+id)?$('#'+id).value.trim():''),q=v('qq');let o;
@@ -1270,7 +1380,7 @@ for(let k=0;k<14;k++){const e=document.createElement('span');e.className='fl';e.
 go('login');
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="config.js?v=2026-11-25a"></script>
-<script src="revuzz-cloud.js?v=2026-11-25a"></script>
+<script src="config.js?v=2026-11-25c"></script>
+<script src="revuzz-cloud.js?v=2026-11-25c"></script>
 </body>
 </html>

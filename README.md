@@ -25,8 +25,12 @@ revuzz-online/
     ALL.sql               the four files above, joined (paste once)
     verify.sql            read-only health check after setup
     demo-reset.sql        demo-day helpers (fresh spin, admin role, delete)
+    functions/
+      revuzz-ai/index.ts  the AI Edge Function (holds the model key server-side)
+  vendor/                 local PDF / DOCX / PPTX readers (no CDN needed)
   tools/
     live-test.mjs         end-to-end test against the real project (61 checks)
+    build-sql.mjs         rebuilds ALL.sql from the four numbered files
     seed-demo.mjs         creates a populated demo class for the defense
   README.md               this file
   SCHEMA.md               data dictionary + ER diagram (for the paper)
@@ -195,6 +199,65 @@ Still client-writable on purpose (no money value, documented soft spots):
 `inventory` (lifeline counts) and `player_badges`. Move them into RPCs before
 the game is used for anything graded.
 
+## AI: questions from a handout
+
+A student uploads their own notes (PDF, DOCX, PPTX, TXT or MD, up to 8 MB) on
+the **Solo** screen. The file is read **on the device** — `vendor/` holds the
+PDF, DOCX and PPTX parsers, so no CDN and no school-network proxy is involved —
+and only the extracted text is sent to the server.
+
+```
+browser: file -> text -> insert into `lessons` (owner-only row)
+           |
+           v
+Edge Function `revuzz-ai`  (Deno, Supabase)
+  - checks the student's JWT
+  - reserves quota through revuzz_ai_reserve (30 calls / 300 questions per day,
+    plus a class-wide cap of 400 calls)
+  - reads the lesson, calls the model, validates the JSON it returns
+  - inserts nothing itself: the questions come back to the browser, which puts
+    them in the student's `custom_questions` deck via the normal save path
+```
+
+Because generated questions land in the normal deck, they play in **every game
+mode** and appear under **My quiz**, with no changes to the quiz engine.
+
+**The key never reaches the browser.** It lives in Supabase secrets:
+`AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL` (any OpenAI-compatible endpoint). With
+no key at all the function returns `ai_not_configured` and the Solo screen uses
+its local fallbacks: extractive summary, keyword search, built-in practice
+questions. `AI_PROVIDER=mock` makes the function answer with rule-based sample
+output for demos — the UI labels it **“Demo AI — not a model”** so it is never
+mistaken for real AI.
+
+What the AI can do, and what it is checked for:
+
+| Action | Request body | Validation |
+|---|---|---|
+| summary | `{action:'summary', lesson_id}` | text trimmed to the lesson cap |
+| questions | `{action:'questions', lesson_id, count, types}` | 1–20 questions; `mc` needs exactly 4 choices, `tf` a boolean, `id`/`en` at least one answer |
+| ask | `{action:'ask', lesson_id, question}` | question length 3–300, answer cites sentences from the handout |
+
+Deploying the function (the dashboard editor is enough):
+
+1. **Edge Functions → revuzz-ai** (create it if missing), paste
+   `supabase/functions/revuzz-ai/index.ts`, **Deploy**.
+2. **Functions → Secrets**: add `AI_BASE_URL`, `AI_MODEL`, `AI_API_KEY`.
+   Remove `AI_PROVIDER=mock` once a real key is set.
+3. The quota RPCs (`revuzz_ai_quota`, `revuzz_ai_class_used`,
+   `revuzz_ai_reserve`, `revuzz_ai_refund`) come from `ALL.sql` /
+   `02_functions.sql`; re-run it if the Edge Function reports a missing RPC.
+4. The Solo screen shows **“AI ready · N of 30 calls left today”** when the key
+   is live, and **“Demo AI”** while the mock provider is on.
+
+Quotas are enforced **inside SQL**, so a modified client cannot raise them:
+`p_calls` is clamped to 1–30, and the caps are constants in the function. A
+failed provider call refunds the reservation (`revuzz_ai_refund`, service-role
+only). Handout text is stored in `lessons` under owner-only RLS; the teacher has
+no read path, and `ai_usage` has no browser grant at all.
+
+Honest limit to state out loud: the AI writes practice questions, not graded
+exam items. A teacher should skim them before a class uses them.
 
 ## Where each piece lives
 
@@ -212,6 +275,8 @@ the game is used for anything graded.
 | match header | `game_sessions` |
 | per-match score, rank, win, correct/wrong | `game_players` |
 | coin audit trail | `coin_ledger` |
+| uploaded handouts (private to the student) | `lessons` |
+| AI calls used today (server-only) | `ai_usage` |
 | catalogs | `themes`, `badges`, `accessories` |
 
 ## Security notes (read before a real class)
@@ -264,6 +329,10 @@ the game is used for anything graded.
 | Coins do not change after an offline match | By design - money only moves through the RPCs, so it needs a connection. |
 | You edited `revuzz-cloud.js` (or `config.js`) and the old behaviour is still there | The browser cached the file. Bump the `?v=` date on those two `<script src>` tags in `Revuzz-online.html`. |
 | A `PATCH` to `profiles` returns 403 | Correct. The browser has no write grant on `profiles`; use `revuzz_save_account` / `revuzz_buy`. |
+| Solo says “AI is not set up yet” | Add `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` in **Edge Functions → Secrets**, or leave it: uploads, summaries and practice questions still work offline. |
+| Solo says “The AI service is not deployed yet” | Deploy the `revuzz-ai` function (Dashboard → Edge Functions). |
+| “Your AI help for today is used up” | The per-student cap (30 calls / 300 questions per Manila day) is spent; it resets at midnight. The caps are in `revuzz_ai_reserve`. |
+| PDF upload says “almost no readable text” | It is a scanned/image PDF. Copy the text and paste it instead, or use the original DOCX. |
 
 ## Deploying
 
